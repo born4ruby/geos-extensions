@@ -4,24 +4,11 @@ $: << File.dirname(__FILE__)
 require 'test_helper'
 
 class YamlTests < MiniTest::Unit::TestCase
-  attr :reader, :writer
+  include TestHelper
 
   # This is for 1.8 support, makes tests easier
   unless YAML.const_defined?('ENGINE')
     YAML::ENGINE = 'syck'
-  end
-
-  def setup
-    @reader = Geos::WktReader.new
-    @writer = Geos::WktWriter.new
-  end
-
-  def read(*args)
-    reader.read(*args)
-  end
-
-  def write(*args)
-    writer.write(*args)
   end
 
   def munge_expected(expected)
@@ -33,38 +20,31 @@ class YamlTests < MiniTest::Unit::TestCase
     end
   end
 
-  def test_point
-    geom = read('POINT(5 7)')
-    geom.srid = 4326
-
+  def test_point_wkt
+    geom = Geos.read('POINT(5 7)')
     yaml = YAML.dump(geom)
 
     expected = munge_expected <<-EOS
 --- !ruby/object:Geos::Point
-wkt: POINT (5.0000000000000000 7.0000000000000000)
-srid: 4326
+geom: POINT (5.0000000000000000 7.0000000000000000)
 EOS
 
     assert_equal(expected, yaml)
 
     new_geom = YAML.load(yaml)
     assert_kind_of(Geos::Point, new_geom)
-    assert_equal(4326, new_geom.srid)
-    assert_equal(5, new_geom.x)
-    assert_equal(7, new_geom.y)
+    assert_in_delta(5, new_geom.x, DELTA_TOLERANCE)
+    assert_in_delta(7, new_geom.y, DELTA_TOLERANCE)
   end
 
-  def test_line
-    geom = read('LINESTRING (0 0, 10 10)')
-    geom.srid = 4326
-
+  def test_line_string
+    geom = Geos.read('LINESTRING (0 0, 10 10)')
     yaml = YAML.dump(geom)
 
     expected = munge_expected <<-EOS
 --- !ruby/object:Geos::LineString
-wkt: LINESTRING (0.0000000000000000 0.0000000000000000, 10.0000000000000000 10.0000000000000000)
-srid: 4326
-    EOS
+geom: LINESTRING (0.0000000000000000 0.0000000000000000, 10.0000000000000000 10.0000000000000000)
+EOS
     assert_equal(expected, yaml)
 
     new_geom = YAML.load(yaml)
@@ -82,24 +62,20 @@ srid: 4326
   end
 
   def test_polygon
-    geom = read('POLYGON ((0 0, 5 0, 5 5, 0 5, 0 0))')
-    geom.srid = 4326
-
+    geom = Geos.read('POLYGON ((0 0, 5 0, 5 5, 0 5, 0 0))')
     yaml = YAML.dump(geom)
 
     expected = if YAML::ENGINE == 'syck'
       munge_expected(<<-EOS)
 --- !ruby/object:Geos::Polygon
-wkt: POLYGON ((0.0000000000000000 0.0000000000000000, 5.0000000000000000 0.0000000000000000, 5.0000000000000000 5.0000000000000000, 0.0000000000000000 5.0000000000000000, 0.0000000000000000 0.0000000000000000))
-srid: 4326
+geom: POLYGON ((0.0000000000000000 0.0000000000000000, 5.0000000000000000 0.0000000000000000, 5.0000000000000000 5.0000000000000000, 0.0000000000000000 5.0000000000000000, 0.0000000000000000 0.0000000000000000))
 EOS
   else
   <<-EOS
 --- !ruby/object:Geos::Polygon
-wkt: POLYGON ((0.0000000000000000 0.0000000000000000, 5.0000000000000000 0.0000000000000000,
+geom: POLYGON ((0.0000000000000000 0.0000000000000000, 5.0000000000000000 0.0000000000000000,
   5.0000000000000000 5.0000000000000000, 0.0000000000000000 5.0000000000000000, 0.0000000000000000
   0.0000000000000000))
-srid: 4326
 EOS
     end
 
@@ -113,21 +89,115 @@ EOS
   end
 
   def test_geometry_collection
-    geom = read('GEOMETRYCOLLECTION (POINT(5 7))')
-    geom.srid = 4326
-
+    geom = Geos.read('GEOMETRYCOLLECTION (POINT(5 7))')
     yaml = YAML.dump(geom)
 
     expected = munge_expected <<-EOS
 --- !ruby/object:Geos::GeometryCollection
-wkt: GEOMETRYCOLLECTION (POINT (5.0000000000000000 7.0000000000000000))
-srid: 4326
+geom: GEOMETRYCOLLECTION (POINT (5.0000000000000000 7.0000000000000000))
     EOS
     assert_equal(expected, yaml)
 
     new_geom = YAML.load(yaml)
     assert_kind_of(Geos::GeometryCollection, new_geom)
     assert_equal(1, new_geom.to_a.count)
+  end
+
+  def test_load_point_with_srid
+    yaml = <<-EOS
+--- !ruby/object:Geos::Point
+geom: SRID=4326;POINT (5.0000000000000000 7.0000000000000000)
+EOS
+
+    new_geom = YAML.load(yaml)
+    assert_kind_of(Geos::Point, new_geom)
     assert_equal(4326, new_geom.srid)
+    assert_equal(5, new_geom.x)
+    assert_equal(7, new_geom.y)
+  end
+
+  def test_load_wkb_hex
+    yaml = <<-EOS
+--- !ruby/object:Geos::Point
+geom: 010100000000000000000014400000000000001C40
+EOS
+
+    new_geom = YAML.load(yaml)
+    assert_kind_of(Geos::Point, new_geom)
+    assert_equal(5, new_geom.x)
+    assert_equal(7, new_geom.y)
+  end
+
+  def test_load_ewkb_hex
+    yaml = <<-EOS
+--- !ruby/object:Geos::Point
+geom: 0101000020E610000000000000000014400000000000001C40
+EOS
+
+    new_geom = YAML.load(yaml)
+    assert_kind_of(Geos::Point, new_geom)
+    assert_equal(4326, new_geom.srid)
+    assert_equal(5, new_geom.x)
+    assert_equal(7, new_geom.y)
+  end
+
+  def test_load_g_lat_lng_bounds_string
+    yaml = <<-EOS
+--- !ruby/object:Geos::Polygon
+geom: ((0.1, 0.1), (5.2, 5.2))
+EOS
+
+    new_geom = YAML.load(yaml)
+    assert_kind_of(Geos::Polygon, new_geom)
+    assert_equal(0.1, new_geom.sw.x)
+    assert_equal(0.1, new_geom.sw.y)
+  end
+
+  def test_load_g_lat_lng_bounds_url_value
+    yaml = <<-EOS
+--- !ruby/object:Geos::Polygon
+geom: 0.1,0.1,5.2,5.2
+EOS
+
+    new_geom = YAML.load(yaml)
+    assert_kind_of(Geos::Polygon, new_geom)
+    assert_equal(0.1, new_geom.sw.x)
+    assert_equal(0.1, new_geom.sw.y)
+  end
+
+  def test_load_g_lat_lng_string
+    yaml = <<-EOS
+--- !ruby/object:Geos::Point
+geom: (5, 7)
+EOS
+
+    new_geom = YAML.load(yaml)
+    assert_kind_of(Geos::Point, new_geom)
+    assert_equal(7, new_geom.x)
+    assert_equal(5, new_geom.y)
+  end
+
+  def test_load_g_lat_lng_url_value
+    yaml = <<-EOS
+--- !ruby/object:Geos::Point
+geom: "5,7"
+EOS
+
+    new_geom = YAML.load(yaml)
+    assert_kind_of(Geos::Point, new_geom)
+    assert_equal(7, new_geom.x)
+    assert_equal(5, new_geom.y)
+  end
+
+  def test_load_box2d
+    yaml = <<-EOS
+--- !ruby/object:Geos::Polygon
+geom: BOX(0.1 0.1, 5.2 5.2)
+EOS
+
+    new_geom = YAML.load(yaml)
+    assert_kind_of(Geos::Polygon, new_geom)
+    assert_equal(0.1, new_geom.sw.x)
+    assert_equal(0.1, new_geom.sw.y)
   end
 end

@@ -9,17 +9,15 @@ module Geos
     end
 
     def self.yaml_new(klass, tag, val)
-      reader = Geos::WktReader.new
-      result = reader.read(val['wkt'])
-      result.srid = val['srid']
-      result
+      Geos.read(val['geom'])
     end
 
     def to_yaml( opts = {} )
-      YAML::quick_emit( self.object_id, opts ) do |out|
+      YAML::quick_emit(self.object_id, opts) do |out|
         out.map(taguri) do |map|
-          map.add('wkt', self.to_wkt)
-          map.add('srid', self.srid)
+          map.add('geom', self.to_ewkt(
+            :include_srid => self.srid != 0
+          ))
         end
       end
     end
